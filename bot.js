@@ -241,6 +241,7 @@ async function handleMessage(msg) {
         // Verify code via API
         try {
             const apiUrl = SITE_URL + '/api.php';
+            log(`/link sending to ${apiUrl} code=${code} chatId=${chatId}`);
             const resp = await fetchPost(apiUrl, {
                 action:     'verifyTgCode',
                 code,
@@ -248,6 +249,7 @@ async function handleMessage(msg) {
                 tgUsername: tgUser,
                 secret:     BOT_SECRET,
             });
+            log(`/link response: ${JSON.stringify(resp)}`);
 
             if (resp && resp.success) {
                 const loginToken = sha256(resp.userId + BOT_SECRET + todayStr());
