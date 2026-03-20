@@ -10,7 +10,7 @@ const BOT_SECRET = 'sbsecret_sozboyligi2024';
 
 const fs   = require('fs');
 const path = require('path');
-const http = require('https');
+// http modules declared below with fetchPost
 
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -56,16 +56,18 @@ async function tgApi(method, body) {
     });
 }
 
-// HTTP POST to site API
+// HTTP POST to site API — always uses https module
+const httpsLib = require('https');
+const httpLib  = require('http');
+
 async function fetchPost(url, body) {
     const data = JSON.stringify(body);
     return new Promise((resolve) => {
-        const isHttps = url.startsWith('https');
-        const lib = isHttps ? http : http2;
+        const lib    = url.startsWith('https') ? httpsLib : httpLib;
         const urlObj = new URL(url);
         const options = {
             hostname: urlObj.hostname,
-            port:     urlObj.port || (isHttps ? 443 : 80),
+            port:     urlObj.port || (url.startsWith('https') ? 443 : 80),
             path:     urlObj.pathname + urlObj.search,
             method:   'POST',
             headers:  {
@@ -78,7 +80,7 @@ async function fetchPost(url, body) {
             res.on('data', c => raw += c);
             res.on('end', () => {
                 try { resolve(JSON.parse(raw)); }
-                catch { resolve(null); }
+                catch(e) { log('fetchPost parse error: ' + e.message + ' raw: ' + raw.slice(0,100)); resolve(null); }
             });
         });
         req.on('error', (e) => { log('fetchPost error: ' + e.message); resolve(null); });
@@ -114,11 +116,13 @@ function todayStr(offsetDays = 0) {
 // ── XABAR HANDLERLARI ────────────────────────────────────────
 async function handleMessage(msg) {
     const chatId    = msg.chat.id;
-    const text      = (msg.text || '').trim();
+    // Normalize: remove @botname suffix from commands (e.g. /link@soz_boyligibot -> /link)
+    const rawText   = (msg.text || '').trim();
+    const text      = rawText.replace(/^(\/[a-zA-Z_]+)@[a-zA-Z0-9_]+/, '$1');
     const firstName = msg.from?.first_name || 'Foydalanuvchi';
     const tgUser    = msg.from?.username || '';
 
-    log(`MSG chatId=${chatId} text=${text}`);
+    log(`MSG chatId=${chatId} rawText=${rawText} text=${text}`);
 
     // ── /start ────────────────────────────────────────────────
     if (text.startsWith('/start')) {
@@ -264,7 +268,8 @@ async function handleMessage(msg) {
             }
         } catch(e) {
             log(`/link error: ${e.message}`);
-            await sendMsg(chatId, '❌ Serverga ulanishda xato. Keyinroq urining.');
+            log(`/link stack: ${e.stack}`);
+            await sendMsg(chatId, '❌ Serverga ulanishda xato. Bot log ga qarang.');
         }
         return;
     }
@@ -293,8 +298,14 @@ async function handleMessage(msg) {
         return;
     }
 
-    // Default
-    await sendMsg(chatId, '👋 /start yuboring');
+    // Default - show menu
+    await sendMsg(chatId,
+        '📌 Buyruqlar:\n' +
+        '/link XXXXXX — Saytga ulash\n' +
+        '/me — Profilim\n' +
+        '/unlink — Uzish\n' +
+        '/help — Yordam'
+    );
 }
 
 // ── NOTIFICATION FUNKSIYALARI (api.php dan chaqiriladi) ───────
@@ -332,9 +343,8 @@ async function poll() {
 // ── NOTIFICATION SERVER (ixtiyoriy: local HTTP server) ────────
 // api.php bu portga so'rov yuboradi
 const NOTIFY_PORT = 3001;
-const http2 = require('http');
-
-http2.createServer(async (req, res) => {
+// Notification HTTP server
+httpLib.createServer(async (req, res) => {
     if (req.method !== 'GET') { res.end('{}'); return; }
 
     const url    = new URL(req.url, `http://localhost:${NOTIFY_PORT}`);
