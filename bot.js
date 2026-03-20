@@ -310,6 +310,14 @@ async function handleMessage(msg) {
         return;
     }
 
+    // /debug command — admin only
+    if (text === '/debug') {
+        const params = new URLSearchParams({internal:'1',secret:BOT_SECRET,action:'debug'});
+        const resp = await fetchGet(SITE_URL + '/bot.php?' + params.toString());
+        await sendMsg(chatId, '<pre>' + JSON.stringify(resp, null, 2).slice(0, 3000) + '</pre>');
+        return;
+    }
+
     // Default - show menu
     await sendMsg(chatId,
         '📌 Buyruqlar:\n' +
