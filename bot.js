@@ -58,6 +58,25 @@ async function tgApi(method, body) {
     });
 }
 
+// HTTP GET request — uses built-in fetch (Node 18+)
+async function fetchGet(url) {
+    try {
+        log(`fetchGet -> ${url.slice(0, 100)}`);
+        const res = await fetch(url, {
+            method:  'GET',
+            headers: { 'User-Agent': 'SozBot/1.0' },
+            signal:  AbortSignal.timeout(10000),
+        });
+        const text = await res.text();
+        log(`fetchGet <- status=${res.status} body=${text.slice(0, 120)}`);
+        try { return JSON.parse(text); }
+        catch(e) { log(`fetchGet parse error: ${e.message} raw: ${text.slice(0,100)}`); return null; }
+    } catch(e) {
+        log(`fetchGet ERROR: ${e.message}`);
+        return null;
+    }
+}
+
 // HTTP POST to site API — uses built-in fetch (Node 18+)
 async function fetchPost(url, body) {
     try {
@@ -228,20 +247,23 @@ async function handleMessage(msg) {
             return;
         }
 
-        // Verify code via API
+        // Verify code via bot.php (same server as site, no DDoS protection)
         try {
-            const apiUrl = SITE_URL + '/api.php';
-            log(`/link sending to ${apiUrl} code=${code} chatId=${chatId}`);
-            const resp = await fetchPost(apiUrl, {
-                action:     'verifyTgCode',
+            const params = new URLSearchParams({
+                internal:  '1',
+                secret:    BOT_SECRET,
+                action:    'verifyTgCode',
                 code,
-                chatId:     String(chatId),
-                tgUsername: tgUser,
-                secret:     BOT_SECRET,
+                chatId:    String(chatId),
+                tgUsername: tgUser || '',
             });
+            const botPhpUrl = SITE_URL + '/bot.php?' + params.toString();
+            log(`/link -> ${botPhpUrl}`);
+
+            const resp = await fetchGet(botPhpUrl);
             log(`/link response: ${JSON.stringify(resp)}`);
 
-            if (resp && resp.success) {
+            if (resp && resp.ok) {
                 const loginToken = sha256(resp.userId + BOT_SECRET + todayStr());
                 const loginUrl   = `${SITE_URL}/student?tgtoken=${loginToken}&tguid=${encodeURIComponent(resp.userId)}`;
                 await sendMsg(chatId,
@@ -251,7 +273,7 @@ async function handleMessage(msg) {
                     [[{ text: '🌐 Saytga Kirish', url: loginUrl }]]
                 );
             } else {
-                const errMsg = resp?.message || "Kod noto'g'ri";
+                const errMsg = resp?.error || 'Kod xato yoki topilmadi';
                 await sendMsg(chatId,
                     `❌ <b>${errMsg}</b>\n\n` +
                     `📌 Saytdan yangi kod oling va qayta urining.`
@@ -259,8 +281,7 @@ async function handleMessage(msg) {
             }
         } catch(e) {
             log(`/link error: ${e.message}`);
-            log(`/link stack: ${e.stack}`);
-            await sendMsg(chatId, '❌ Serverga ulanishda xato. Bot log ga qarang.');
+            await sendMsg(chatId, '❌ Xato yuz berdi: ' + e.message);
         }
         return;
     }
