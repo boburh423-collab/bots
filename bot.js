@@ -58,34 +58,24 @@ async function tgApi(method, body) {
     });
 }
 
-// HTTP POST to site API
+// HTTP POST to site API — uses built-in fetch (Node 18+)
 async function fetchPost(url, body) {
-    const data = JSON.stringify(body);
-    return new Promise((resolve) => {
-        const lib    = url.startsWith('https') ? httpsLib : httpLib;
-        const urlObj = new URL(url);
-        const options = {
-            hostname: urlObj.hostname,
-            port:     urlObj.port || (url.startsWith('https') ? 443 : 80),
-            path:     urlObj.pathname + urlObj.search,
-            method:   'POST',
-            headers:  {
-                'Content-Type':   'application/json',
-                'Content-Length': Buffer.byteLength(data),
-            }
-        };
-        const req = lib.request(options, (res) => {
-            let raw = '';
-            res.on('data', c => raw += c);
-            res.on('end', () => {
-                try { resolve(JSON.parse(raw)); }
-                catch(e) { log('fetchPost parse error: ' + e.message + ' raw: ' + raw.slice(0,100)); resolve(null); }
-            });
+    try {
+        log(`fetchPost -> ${url} body=${JSON.stringify(body).slice(0,80)}`);
+        const res = await fetch(url, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(body),
+            signal:  AbortSignal.timeout(10000), // 10 second timeout
         });
-        req.on('error', (e) => { log('fetchPost error: ' + e.message); resolve(null); });
-        req.write(data);
-        req.end();
-    });
+        const text = await res.text();
+        log(`fetchPost <- status=${res.status} body=${text.slice(0,120)}`);
+        try { return JSON.parse(text); }
+        catch(e) { log(`fetchPost parse error: ${e.message} raw: ${text.slice(0,100)}`); return null; }
+    } catch(e) {
+        log(`fetchPost ERROR: ${e.message}`);
+        return null;
+    }
 }
 
 async function sendMsg(chatId, text, keyboard = null) {
