@@ -8,9 +8,11 @@ const BOT_TOKEN = '8623775032:AAFn3ESnMoWddva2kCecwuJx8TZRv7nceqs';
 const SITE_URL  = 'https://soz-boyligi.zya.me';
 const BOT_SECRET = 'sbsecret_sozboyligi2024';
 
-const fs   = require('fs');
-const path = require('path');
-// http modules declared below with fetchPost
+const fs        = require('fs');
+const path      = require('path');
+const http      = require('https');   // tgApi uchun (Telegram API = https)
+const httpsLib  = require('https');   // fetchPost uchun
+const httpLib   = require('http');    // fetchPost + notification server uchun
 
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -56,10 +58,7 @@ async function tgApi(method, body) {
     });
 }
 
-// HTTP POST to site API — always uses https module
-const httpsLib = require('https');
-const httpLib  = require('http');
-
+// HTTP POST to site API
 async function fetchPost(url, body) {
     const data = JSON.stringify(body);
     return new Promise((resolve) => {
