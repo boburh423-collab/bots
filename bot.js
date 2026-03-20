@@ -56,6 +56,37 @@ async function tgApi(method, body) {
     });
 }
 
+// HTTP POST to site API
+async function fetchPost(url, body) {
+    const data = JSON.stringify(body);
+    return new Promise((resolve) => {
+        const isHttps = url.startsWith('https');
+        const lib = isHttps ? http : http2;
+        const urlObj = new URL(url);
+        const options = {
+            hostname: urlObj.hostname,
+            port:     urlObj.port || (isHttps ? 443 : 80),
+            path:     urlObj.pathname + urlObj.search,
+            method:   'POST',
+            headers:  {
+                'Content-Type':   'application/json',
+                'Content-Length': Buffer.byteLength(data),
+            }
+        };
+        const req = lib.request(options, (res) => {
+            let raw = '';
+            res.on('data', c => raw += c);
+            res.on('end', () => {
+                try { resolve(JSON.parse(raw)); }
+                catch { resolve(null); }
+            });
+        });
+        req.on('error', (e) => { log('fetchPost error: ' + e.message); resolve(null); });
+        req.write(data);
+        req.end();
+    });
+}
+
 async function sendMsg(chatId, text, keyboard = null) {
     const body = { chat_id: chatId, text, parse_mode: 'HTML' };
     if (keyboard) body.reply_markup = { inline_keyboard: keyboard };
@@ -152,7 +183,10 @@ async function handleMessage(msg) {
         await sendMsg(chatId,
             `👋 Salom, <b>${firstName}</b>!\n\n` +
             `📚 <b>So'z Boyliklari</b> botiga xush kelibsiz!\n\n` +
-            `Saytga kiring va Profil bo'limida "Telegram" tugmasini bosing.`,
+            `📌 <b>Ulash uchun:</b>\n` +
+            `1. Saytga kiring\n` +
+            `2. Profil → Telegram kodini oling\n` +
+            `3. Bu yerga <code>/link XXXXXX</code> yuboring`,
             [[{ text: '🌐 Saytga Kirish', url: `${SITE_URL}/student` }]]
         );
         return;
@@ -162,10 +196,12 @@ async function handleMessage(msg) {
     if (text === '/help') {
         await sendMsg(chatId,
             '📌 <b>Buyruqlar:</b>\n' +
-            '/start — Botni ishga tushirish\n' +
-            '/help  — Yordam\n' +
-            '/me    — Mening profilim\n' +
-            '/unlink — Uzish'
+            '/start          — Botni ishga tushirish\n' +
+            '/link XXXXXX    — 6 xonali kod bilan ulash\n' +
+            '/me             — Mening profilim\n' +
+            '/unlink         — Telegram dan uzish\n' +
+            '/help           — Yordam\n\n' +
+            '📌 Ulash uchun saytdagi profildan kodni oling va /link 123456 yuboring.'
         );
         return;
     }
@@ -183,6 +219,52 @@ async function handleMessage(msg) {
             );
         } else {
             await sendMsg(chatId, '❌ Siz saytga ulanmagan.\n\n/start orqali ulaning.');
+        }
+        return;
+    }
+
+    // ── /link CODE ────────────────────────────────────────────
+    if (text.startsWith('/link')) {
+        const code = text.slice(6).trim().replace(/\s+/g, '');
+        if (!code || !/^\d{6}$/.test(code)) {
+            await sendMsg(chatId,
+                "❌ Noto\u02BBg\u02BBri format.\n\n" +
+                'Foydalanish: <code>/link 123456</code>\n\n' +
+                '📌 Saytdagi profilingizdan 6 xonali kodni oling.'
+            );
+            return;
+        }
+
+        // Verify code via API
+        try {
+            const apiUrl = SITE_URL + '/api.php';
+            const resp = await fetchPost(apiUrl, {
+                action:     'verifyTgCode',
+                code,
+                chatId:     String(chatId),
+                tgUsername: tgUser,
+                secret:     BOT_SECRET,
+            });
+
+            if (resp && resp.success) {
+                const loginToken = sha256(resp.userId + BOT_SECRET + todayStr());
+                const loginUrl   = `${SITE_URL}/student?tgtoken=${loginToken}&tguid=${encodeURIComponent(resp.userId)}`;
+                await sendMsg(chatId,
+                    `✅ <b>Muvaffaqiyatli ulandi!</b>\n\n` +
+                    `👤 Salom, <b>${resp.username}</b>!\n\n` +
+                    `Endi yangi so'zlar va testlar haqida bildirishnomalar olasiz!`,
+                    [[{ text: '🌐 Saytga Kirish', url: loginUrl }]]
+                );
+            } else {
+                const errMsg = resp?.message || "Kod noto'g'ri";
+                await sendMsg(chatId,
+                    `❌ <b>${errMsg}</b>\n\n` +
+                    `📌 Saytdan yangi kod oling va qayta urining.`
+                );
+            }
+        } catch(e) {
+            log(`/link error: ${e.message}`);
+            await sendMsg(chatId, '❌ Serverga ulanishda xato. Keyinroq urining.');
         }
         return;
     }
