@@ -69,8 +69,15 @@ const crypto = require('crypto');
 function sha256(str) {
     return crypto.createHash('sha256').update(str).digest('hex');
 }
-function todayStr() {
-    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+function todayStr(offsetDays = 0) {
+    // PHP date('Y-m-d') server local time ishlatadi
+    // Biz ham UTC+5 (O'zbekiston) deb hisoblaymiz
+    const d = new Date();
+    d.setTime(d.getTime() + offsetDays * 86400000);
+    // UTC+5 offset qo'shamiz
+    const offset = 5 * 60; // minutes
+    const localTime = new Date(d.getTime() + offset * 60000);
+    return localTime.toISOString().slice(0, 10);
 }
 
 // ── XABAR HANDLERLARI ────────────────────────────────────────
